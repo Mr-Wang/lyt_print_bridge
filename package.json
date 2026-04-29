@@ -1,0 +1,32 @@
+{
+  "name": "lyt_print_bridge",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "build:win": "env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin",
+    "build:linux": "tauri build --target x86_64-unknown-linux-gnu --bundles deb",
+    "build:linux:arm64": "tauri build --target aarch64-unknown-linux-gnu --bundles deb",
+    "build:mac": "tauri build --target x86_64-apple-darwin"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^1.6.0",
+    "pdfjs-dist": "^4.10.38",
+    "vue": "^3.5.25"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^1.6.0",
+    "@types/node": "^24.10.1",
+    "@vitejs/plugin-vue": "^6.0.2",
+    "@vue/tsconfig": "^0.8.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.1",
+    "vue-tsc": "^3.1.5"
+  }
+}

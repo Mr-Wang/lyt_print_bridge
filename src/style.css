@@ -1,0 +1,140 @@
+:root {
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #172033;
+  background: #f4f7fb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f4f7fb;
+}
+
+button {
+  min-width: 86px;
+  border: 0;
+  border-radius: 8px;
+  background: #1f6feb;
+  color: #fff;
+  cursor: pointer;
+  padding: 9px 12px;
+  font: inherit;
+}
+
+button.secondary {
+  background: #e7ecf2;
+  color: #172033;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+#app {
+  width: 100%;
+}
+
+.plugin-shell {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.topbar,
+.status-panel,
+.last-job {
+  border: 1px solid #dce3ec;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+}
+
+.topbar h1 {
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.topbar p,
+.footnote,
+.last-job p,
+.status-panel span,
+.last-job span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.status-dot {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #ef4444;
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.12);
+}
+
+.status-dot.is-ok {
+  background: #16a34a;
+  box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.14);
+}
+
+.status-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  overflow: hidden;
+  background: #dce3ec;
+}
+
+.status-panel div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  background: #fff;
+  padding: 12px;
+}
+
+.status-panel strong,
+.last-job strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.last-job {
+  display: flex;
+  min-height: 72px;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px;
+}
+
+.error-text {
+  color: #b91c1c !important;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.footnote {
+  overflow: hidden;
+  margin-top: auto;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

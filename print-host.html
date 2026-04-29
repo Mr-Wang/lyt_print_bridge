@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>打印文档</title>
+    <script type="module" src="/src/print-host.ts"></script>
+  </head>
+  <body>
+    <div class="print-shell">
+      <header class="toolbar screen-only">
+        <div>
+          <strong id="job-title">正在准备打印文档...</strong>
+          <p id="job-status">正在加载 PDF，请稍候。</p>
+        </div>
+        <div class="toolbar-actions">
+          <button id="retry-print" type="button" disabled>打开系统打印</button>
+          <button id="close-window" type="button" class="ghost">关闭窗口</button>
+        </div>
+      </header>
+
+      <main id="pdf-pages" class="pdf-pages"></main>
+    </div>
+  </body>
+</html>

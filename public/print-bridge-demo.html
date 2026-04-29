@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>辽易通打印插件 Demo</title>
+    <script src="./liaoyitong-print-bridge.js"></script>
+    <style>
+      body {
+        margin: 0;
+        font-family: "Microsoft YaHei", sans-serif;
+        background: #f5f7fb;
+        color: #172033;
+      }
+
+      main {
+        max-width: 680px;
+        margin: 48px auto;
+        padding: 0 20px;
+      }
+
+      section {
+        display: grid;
+        gap: 16px;
+        border: 1px solid #dce3ec;
+        border-radius: 8px;
+        background: #fff;
+        padding: 20px;
+      }
+
+      input,
+      button {
+        border-radius: 8px;
+        font: inherit;
+        padding: 10px 12px;
+      }
+
+      input {
+        border: 1px solid #ccd6e2;
+      }
+
+      button {
+        border: 0;
+        background: #1f6feb;
+        color: #fff;
+        cursor: pointer;
+      }
+
+      pre {
+        overflow: auto;
+        border-radius: 8px;
+        background: #101828;
+        color: #d7e3f4;
+        padding: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <h1>辽易通打印插件 Demo</h1>
+        <button id="ping" type="button">检测插件</button>
+        <input id="fileUrl" type="url" placeholder="PDF 地址，例如 https://example.com/test.pdf" />
+        <button id="printUrl" type="button">打印 PDF 地址</button>
+        <input id="fileInput" type="file" accept="application/pdf" />
+        <button id="printFile" type="button">打印本地 PDF</button>
+        <pre id="output">等待操作...</pre>
+      </section>
+    </main>
+
+    <script>
+      var output = document.getElementById('output')
+
+      function show(value) {
+        output.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+      }
+
+      document.getElementById('ping').addEventListener('click', async function () {
+        try {
+          show(await LiaoyitongPrintBridge.ping())
+        } catch (error) {
+          show(error.message)
+        }
+      })
+
+      document.getElementById('printUrl').addEventListener('click', async function () {
+        try {
+          var fileUrl = document.getElementById('fileUrl').value.trim()
+          show(await LiaoyitongPrintBridge.printPdf({ jobName: '网页 PDF 打印', fileUrl: fileUrl }))
+        } catch (error) {
+          show(error.message)
+        }
+      })
+
+      document.getElementById('printFile').addEventListener('click', async function () {
+        try {
+          var file = document.getElementById('fileInput').files[0]
+          if (!file) {
+            show('请选择 PDF 文件')
+            return
+          }
+
+          var reader = new FileReader()
+          reader.onload = async function () {
+            var fileBase64 = String(reader.result).split(',')[1]
+            try {
+              show(await LiaoyitongPrintBridge.printPdf({
+                jobName: file.name,
+                fileName: file.name,
+                fileBase64: fileBase64,
+              }))
+            } catch (error) {
+              show(error.message)
+            }
+          }
+          reader.readAsDataURL(file)
+        } catch (error) {
+          show(error.message)
+        }
+      })
+    </script>
+  </body>
+</html>

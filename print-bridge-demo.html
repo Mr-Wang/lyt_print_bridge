@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LYT 打印桥测试页</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, Arial, sans-serif;
+        background: #06111f;
+        color: #e5eefb;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top, rgba(59, 130, 246, 0.18), transparent 36%),
+          linear-gradient(180deg, #06111f 0%, #091525 100%);
+      }
+
+      main {
+        max-width: 1320px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      .hero,
+      .panel {
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        background: rgba(8, 15, 28, 0.82);
+        border-radius: 24px;
+        box-shadow: 0 24px 80px rgba(2, 6, 23, 0.28);
+      }
+
+      .hero {
+        padding: 24px;
+        margin-bottom: 20px;
+      }
+
+      .hero p {
+        margin: 0;
+      }
+
+      .eyebrow {
+        color: #7dd3fc;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 12px;
+        font-weight: 700;
+        margin-bottom: 10px;
+      }
+
+      h1,
+      h2 {
+        margin: 0 0 10px;
+      }
+
+      .hero-copy,
+      .muted,
+      .status-line,
+      label span,
+      .tips li {
+        color: #9fb0c8;
+      }
+
+      .grid {
+        display: grid;
+        gap: 20px;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+
+      .panel {
+        padding: 20px;
+      }
+
+      .stack {
+        display: grid;
+        gap: 14px;
+      }
+
+      label {
+        display: grid;
+        gap: 8px;
+      }
+
+      input,
+      textarea,
+      select,
+      button {
+        font: inherit;
+      }
+
+      input,
+      textarea,
+      select {
+        width: 100%;
+        padding: 12px 14px;
+        border-radius: 14px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: rgba(15, 23, 42, 0.78);
+        color: #f8fbff;
+      }
+
+      textarea {
+        resize: vertical;
+        min-height: 100px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 14px;
+        padding: 12px 16px;
+        font-weight: 700;
+        cursor: pointer;
+        color: #04111d;
+        background: linear-gradient(135deg, #38bdf8, #818cf8);
+      }
+
+      button.secondary {
+        background: rgba(56, 189, 248, 0.12);
+        color: #d6f3ff;
+      }
+
+      .button-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .meta-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .meta-card {
+        padding: 16px;
+        border-radius: 18px;
+        background: rgba(15, 23, 42, 0.72);
+      }
+
+      .meta-card strong,
+      code,
+      pre {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      pre {
+        margin: 0;
+        padding: 16px;
+        border-radius: 18px;
+        background: rgba(2, 6, 23, 0.9);
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .notice {
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: rgba(250, 204, 21, 0.12);
+        color: #fde68a;
+      }
+
+      .ok {
+        color: #86efac;
+      }
+
+      .bad {
+        color: #fda4af;
+      }
+
+      .tips {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      @media (max-width: 980px) {
+        .grid,
+        .meta-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero stack">
+        <p class="eyebrow">HTML 测试页</p>
+        <div>
+          <h1>LYT 打印桥浏览器测试页</h1>
+          <p class="hero-copy">
+            这个单文件页面用于在普通浏览器里直接测试本地打印桥服务。
+            你可以在这里做服务连通性检查、读取打印机列表、查看任务队列，以及提交 PDF 打印请求。
+          </p>
+        </div>
+        <div class="meta-grid">
+          <div class="meta-card">
+            <div class="muted">当前页面 Origin</div>
+            <strong id="page-origin">-</strong>
+          </div>
+          <div class="meta-card">
+            <div class="muted">打印桥地址</div>
+            <strong id="bridge-url-preview">http://127.0.0.1:12734</strong>
+          </div>
+          <div class="meta-card">
+            <div class="muted">鉴权请求头</div>
+            <strong>X-Print-Bridge-Token</strong>
+          </div>
+        </div>
+        <div id="origin-warning" class="notice" hidden></div>
+      </section>
+
+      <section class="grid">
+        <article class="panel stack">
+          <div>
+            <p class="eyebrow">连接测试</p>
+            <h2>打印桥访问配置</h2>
+          </div>
+
+          <label>
+            <span>打印桥基础地址</span>
+            <input id="base-url" value="http://127.0.0.1:12734" />
+          </label>
+
+          <label>
+            <span>打印桥令牌</span>
+            <input id="token" placeholder="粘贴桌面端界面里显示的 token" />
+          </label>
+
+          <label>
+            <span>附加请求头 JSON（可选）</span>
+            <textarea id="extra-headers" placeholder='{"X-Demo": "1"}'></textarea>
+          </label>
+
+          <div class="button-row">
+            <button id="ping-button" type="button">服务 Ping</button>
+            <button id="printers-button" class="secondary" type="button">读取打印机列表</button>
+            <button id="jobs-button" class="secondary" type="button">读取任务列表</button>
+          </div>
+
+          <div class="status-line" id="status-line">等待操作。</div>
+        </article>
+
+        <article class="panel stack">
+          <div>
+            <p class="eyebrow">打印请求</p>
+            <h2>提交 PDF 打印任务</h2>
+          </div>
+
+          <label>
+            <span>PDF 来源</span>
+            <select id="source-type">
+              <option value="remote">网络 PDF</option>
+              <option value="local">本地 PDF</option>
+            </select>
+          </label>
+
+          <label id="remote-source-group">
+            <span>远程 PDF 地址</span>
+            <input
+              id="file-url"
+              placeholder="https://example.com/files/demo.pdf"
+            />
+          </label>
+
+          <label id="local-source-group" hidden>
+            <span>本地 PDF 文件</span>
+            <input id="local-file" type="file" accept="application/pdf,.pdf" />
+            <small class="muted" id="local-file-name">尚未选择本地 PDF 文件。</small>
+          </label>
+
+          <label>
+            <span>任务名称</span>
+            <input id="job-name" value="测试 PDF 打印任务" />
+          </label>
+
+          <label>
+            <span>打印机名称（可选）</span>
+            <input id="printer-name" placeholder="系统打印对话框模式下一般可留空" />
+          </label>
+
+          <div class="grid" style="grid-template-columns: minmax(0, 1fr) minmax(0, 1fr)">
+            <label>
+              <span>份数</span>
+              <input id="copies" type="number" min="1" value="1" />
+            </label>
+            <label>
+              <span>页码范围</span>
+              <input id="page-range" placeholder="1-2" />
+            </label>
+          </div>
+
+          <label>
+            <span>请求体预览</span>
+            <textarea id="payload-preview" readonly></textarea>
+          </label>
+
+          <div class="button-row">
+            <button id="print-button" type="button">提交打印任务</button>
+          </div>
+        </article>
+      </section>
+
+      <section class="grid" style="margin-top: 20px">
+        <article class="panel stack">
+          <div>
+            <p class="eyebrow">接口响应</p>
+            <h2>最近一次响应</h2>
+          </div>
+          <pre id="response-view">还没有发送请求。</pre>
+        </article>
+
+        <article class="panel stack">
+          <div>
+            <p class="eyebrow">使用说明</p>
+            <h2>测试前先确认</h2>
+          </div>
+          <ul class="tips">
+            <li>先启动桌面端程序，确认本地桥服务已经监听在 127.0.0.1。</li>
+            <li>把桌面端界面中的 access token 粘贴到上面的 token 输入框。</li>
+            <li>把当前页面的 Origin 加到桌面端配置里的 allowed origins 中。</li>
+            <li>如果你是用 file:// 打开本文件，浏览器可能会发送 Origin: null。</li>
+            <li>如果走本地静态服务，记得把类似 http://127.0.0.1:5500 加进白名单。</li>
+            <li>当前桥服务只支持 PDF 打印链路。</li>
+            <li>现在支持两种测试方式：网络 PDF 地址，或直接选择本地 PDF 文件。</li>
+            <li>当前版本会直接弹 Windows 系统打印对话框，不再依赖 SumatraPDF。</li>
+          </ul>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      const els = {
+        pageOrigin: document.getElementById('page-origin'),
+        bridgeUrlPreview: document.getElementById('bridge-url-preview'),
+        originWarning: document.getElementById('origin-warning'),
+        baseUrl: document.getElementById('base-url'),
+        token: document.getElementById('token'),
+        extraHeaders: document.getElementById('extra-headers'),
+        sourceType: document.getElementById('source-type'),
+        remoteSourceGroup: document.getElementById('remote-source-group'),
+        localSourceGroup: document.getElementById('local-source-group'),
+        fileUrl: document.getElementById('file-url'),
+        localFile: document.getElementById('local-file'),
+        localFileName: document.getElementById('local-file-name'),
+        jobName: document.getElementById('job-name'),
+        printerName: document.getElementById('printer-name'),
+        copies: document.getElementById('copies'),
+        pageRange: document.getElementById('page-range'),
+        payloadPreview: document.getElementById('payload-preview'),
+        statusLine: document.getElementById('status-line'),
+        responseView: document.getElementById('response-view'),
+        pingButton: document.getElementById('ping-button'),
+        printersButton: document.getElementById('printers-button'),
+        jobsButton: document.getElementById('jobs-button'),
+        printButton: document.getElementById('print-button'),
+      };
+
+      function setStatus(message, kind) {
+        els.statusLine.textContent = message;
+        els.statusLine.className = 'status-line';
+        if (kind) {
+          els.statusLine.classList.add(kind);
+        }
+      }
+
+      function currentOriginLabel() {
+        if (window.location.protocol === 'file:') {
+          return 'file:// （浏览器可能发送 Origin: null）';
+        }
+        return window.location.origin;
+      }
+
+      function updateOriginNotice() {
+        const origin = currentOriginLabel();
+        els.pageOrigin.textContent = origin;
+
+        if (window.location.protocol === 'file:') {
+          els.originWarning.hidden = false;
+          els.originWarning.textContent =
+            '当前页面是通过 file:// 打开的，部分浏览器会发送 Origin: null。如果桥服务拒绝请求，可以把 null 加进 allowed origins，或者改成通过本地静态服务访问这个页面。';
+        } else {
+          els.originWarning.hidden = false;
+          els.originWarning.textContent =
+            '请确认这个 Origin 已经加入打印桥 allowed origins：' + window.location.origin;
+        }
+      }
+
+      function buildPayload() {
+        const payload = {
+          printerName: trimOrNull(els.printerName.value),
+          jobName: trimOrNull(els.jobName.value) || '测试 PDF 打印任务',
+          contentType: 'pdf',
+          copies: Math.max(1, Number(els.copies.value || '1')),
+          pageRange: trimOrNull(els.pageRange.value),
+        };
+
+        if (els.sourceType.value === 'remote') {
+          payload.fileUrl = els.fileUrl.value.trim();
+        } else {
+          const file = els.localFile.files && els.localFile.files[0];
+          payload.fileName = file ? file.name : null;
+          payload.fileBase64 = file ? '<base64 omitted>' : null;
+        }
+
+        return payload;
+      }
+
+      async function buildSubmitPayload() {
+        const payload = {
+          printerName: trimOrNull(els.printerName.value),
+          jobName: trimOrNull(els.jobName.value) || '测试 PDF 打印任务',
+          contentType: 'pdf',
+          copies: Math.max(1, Number(els.copies.value || '1')),
+          pageRange: trimOrNull(els.pageRange.value),
+        };
+
+        if (els.sourceType.value === 'remote') {
+          payload.fileUrl = els.fileUrl.value.trim();
+          if (!payload.fileUrl) {
+            throw new Error('远程 PDF 地址不能为空。');
+          }
+          return payload;
+        }
+
+        const file = els.localFile.files && els.localFile.files[0];
+        if (!file) {
+          throw new Error('请选择本地 PDF 文件。');
+        }
+        payload.fileName = file.name;
+        payload.fileBase64 = await readFileAsBase64(file);
+        return payload;
+      }
+
+      function trimOrNull(value) {
+        const trimmed = value.trim();
+        return trimmed ? trimmed : null;
+      }
+
+      function updatePayloadPreview() {
+        els.payloadPreview.value = JSON.stringify(buildPayload(), null, 2);
+      }
+
+      function updateSourceMode() {
+        const isRemote = els.sourceType.value === 'remote';
+        els.remoteSourceGroup.hidden = !isRemote;
+        els.localSourceGroup.hidden = isRemote;
+        updatePayloadPreview();
+      }
+
+      function updateLocalFileName() {
+        const file = els.localFile.files && els.localFile.files[0];
+        els.localFileName.textContent = file
+          ? `已选择：${file.name}`
+          : '尚未选择本地 PDF 文件。';
+        updatePayloadPreview();
+      }
+
+      async function readFileAsBase64(file) {
+        const arrayBuffer = await file.arrayBuffer();
+        return arrayBufferToBase64(arrayBuffer);
+      }
+
+      function arrayBufferToBase64(arrayBuffer) {
+        const bytes = new Uint8Array(arrayBuffer);
+        const chunkSize = 0x8000;
+        let binary = '';
+
+        for (let index = 0; index < bytes.length; index += chunkSize) {
+          const chunk = bytes.subarray(index, index + chunkSize);
+          binary += String.fromCharCode(...chunk);
+        }
+
+        return window.btoa(binary);
+      }
+
+      function parseExtraHeaders() {
+        const text = els.extraHeaders.value.trim();
+        if (!text) {
+          return {};
+        }
+        const parsed = JSON.parse(text);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          throw new Error('附加请求头 JSON 必须是对象。');
+        }
+        return parsed;
+      }
+
+      async function callBridge(path, options) {
+        const baseUrl = els.baseUrl.value.trim().replace(/\/$/, '');
+        const token = els.token.value.trim();
+        const customHeaders = parseExtraHeaders();
+        els.bridgeUrlPreview.textContent = baseUrl || '-';
+
+        const headers = Object.assign({}, customHeaders, options.headers || {});
+        if (token) {
+          headers['X-Print-Bridge-Token'] = token;
+        }
+
+        const startedAt = new Date().toISOString();
+        setStatus('请求发送中...', null);
+
+        const response = await fetch(baseUrl + path, {
+          method: options.method || 'GET',
+          headers,
+          body: options.body,
+        });
+
+        const responseText = await response.text();
+        let parsedBody;
+        try {
+          parsedBody = JSON.parse(responseText);
+        } catch {
+          parsedBody = responseText;
+        }
+
+        const requestBody = options.body ? JSON.parse(options.body) : null;
+        if (requestBody && typeof requestBody.fileBase64 === 'string') {
+          requestBody.fileBase64 = `<base64 omitted, ${requestBody.fileBase64.length} chars>`;
+        }
+
+        const view = {
+          startedAt,
+          request: {
+            url: baseUrl + path,
+            method: options.method || 'GET',
+            headers,
+            body: requestBody,
+          },
+          response: {
+            status: response.status,
+            ok: response.ok,
+            body: parsedBody,
+          },
+        };
+
+        els.responseView.textContent = JSON.stringify(view, null, 2);
+        setStatus(
+          response.ok ? '请求成功。' : '请求失败，HTTP ' + response.status,
+          response.ok ? 'ok' : 'bad'
+        );
+        return view;
+      }
+
+      async function handlePing() {
+        try {
+          await callBridge('/printer/ping', {
+            method: 'GET',
+          });
+        } catch (error) {
+          setStatus(String(error), 'bad');
+          els.responseView.textContent = String(error);
+        }
+      }
+
+      async function handleListPrinters() {
+        try {
+          await callBridge('/printer/list', {
+            method: 'GET',
+          });
+        } catch (error) {
+          setStatus(String(error), 'bad');
+          els.responseView.textContent = String(error);
+        }
+      }
+
+      async function handleLoadJobs() {
+        try {
+          await callBridge('/printer/jobs', {
+            method: 'GET',
+          });
+        } catch (error) {
+          setStatus(String(error), 'bad');
+          els.responseView.textContent = String(error);
+        }
+      }
+
+      async function handlePrint() {
+        try {
+          const payload = await buildSubmitPayload();
+
+          await callBridge('/printer/print', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+          });
+        } catch (error) {
+          setStatus(String(error), 'bad');
+          els.responseView.textContent = String(error);
+        }
+      }
+
+      els.baseUrl.addEventListener('input', () => {
+        els.bridgeUrlPreview.textContent = els.baseUrl.value.trim() || '-';
+      });
+
+      [els.fileUrl, els.jobName, els.printerName, els.copies, els.pageRange].forEach((el) => {
+        el.addEventListener('input', updatePayloadPreview);
+      });
+      els.sourceType.addEventListener('change', updateSourceMode);
+      els.localFile.addEventListener('change', updateLocalFileName);
+
+      els.pingButton.addEventListener('click', handlePing);
+      els.printersButton.addEventListener('click', handleListPrinters);
+      els.jobsButton.addEventListener('click', handleLoadJobs);
+      els.printButton.addEventListener('click', handlePrint);
+
+      updateOriginNotice();
+      updateSourceMode();
+      updateLocalFileName();
+      updatePayloadPreview();
+    </script>
+  </body>
+</html>

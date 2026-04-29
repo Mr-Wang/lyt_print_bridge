@@ -1,0 +1,11 @@
+{
+  "port": 12734,
+  "accessToken": "replace-with-generated-token",
+  "allowedOrigins": [
+    "https://admin.example.com"
+  ],
+  "sumatraPdfPath": "C:\\Program Files\\SumatraPDF\\SumatraPDF.exe",
+  "downloadDir": "C:\\lyt-print-bridge\\downloads",
+  "keepDownloadedFiles": false,
+  "confirmationRequired": true
+}
