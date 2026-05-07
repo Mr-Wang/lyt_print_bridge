@@ -1,12 +1,6 @@
-name: Release
+name: Release Linux deb
 
 on:
-  workflow_dispatch:
-    inputs:
-      release_tag:
-        description: Release tag, for example v0.1.0
-        required: true
-        default: v0.1.0
   push:
     tags:
       - "v*"
@@ -14,59 +8,40 @@ on:
 permissions:
   contents: write
 
-env:
-  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
-
 jobs:
-  windows:
-    name: Windows x64 installer
-    runs-on: windows-2022
+  linux-deb:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64 deb
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            artifact_suffix: linux_x64
+          - name: Linux ARM64 deb
+            runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact_suffix: linux_arm64
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Build Windows installer
-        uses: tauri-apps/tauri-action@v0.6.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tauriScript: npm run tauri
-          tagName: ${{ env.RELEASE_TAG }}
-          releaseName: 辽易通打印桥 ${{ env.RELEASE_TAG }}
-          releaseBody: Automated build from GitHub Actions.
-          releaseDraft: true
-          prerelease: false
-          args: --target x86_64-pc-windows-msvc
-
-  linux-x64:
-    name: Linux x64 deb
-    runs-on: ubuntu-22.04
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install system dependencies
+      - name: Install Linux build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libgtk-3-dev \
-            libwebkit2gtk-4.0-dev \
+            build-essential \
+            curl \
+            file \
             libayatana-appindicator3-dev \
-            librsvg2-dev
+            libgtk-3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.0-dev \
+            pkg-config
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -76,19 +51,63 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Use npm China mirror
+        run: npm config set registry https://registry.npmmirror.com
 
       - name: Install frontend dependencies
         run: npm ci
 
       - name: Build Linux deb
-        uses: tauri-apps/tauri-action@v0.6.2
+        run: npm run tauri -- build --target ${{ matrix.target }} --bundles deb
+
+      - name: Normalize artifact name
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARTIFACT_SUFFIX: ${{ matrix.artifact_suffix }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p release-assets
+          deb_path="$(find "src-tauri/target/${{ matrix.target }}/release/bundle/deb" -maxdepth 1 -name '*.deb' -print -quit)"
+          if [ -z "$deb_path" ]; then
+            echo "No deb package found" >&2
+            exit 1
+          fi
+          cp "$deb_path" "release-assets/liaoyitong-print-bridge_${version}_${ARTIFACT_SUFFIX}.deb"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
         with:
-          tauriScript: npm run tauri
-          tagName: ${{ env.RELEASE_TAG }}
-          releaseName: 辽易通打印桥 ${{ env.RELEASE_TAG }}
-          releaseBody: Automated build from GitHub Actions.
-          releaseDraft: true
-          prerelease: false
-          args: --target x86_64-unknown-linux-gnu --bundles deb
+          name: deb-${{ matrix.artifact_suffix }}
+          path: release-assets/*.deb
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-22.04
+    needs: linux-deb
+
+    steps:
+      - name: Download deb artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          ls -lh release-assets
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release-assets/*.deb --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release-assets/*.deb \
+              --draft \
+              --title "辽易通打印插件 $GITHUB_REF_NAME" \
+              --notes "GitHub 免费云 runner 构建的 Ubuntu 通用 deb；请在 UOS/麒麟实机验证兼容性。Windows 安装包继续本地构建。"
+          fi

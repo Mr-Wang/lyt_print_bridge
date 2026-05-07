@@ -98,6 +98,7 @@ async function renderJob(jobId: string) {
     }
 
     await renderPdfDocument(job.localFilePath)
+    await waitForPrintLayout()
     if (retryButton) {
       retryButton.disabled = false
     }
@@ -162,6 +163,34 @@ async function renderPdfDocument(localFilePath: string) {
       height: canvas.height,
     })
   }
+}
+
+function nextAnimationFrame() {
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve())
+  })
+}
+
+async function waitForPrintLayout() {
+  const fontFaceSet = (document as Document & {
+    fonts?: { ready?: Promise<unknown> }
+  }).fonts
+
+  if (fontFaceSet?.ready) {
+    await fontFaceSet.ready
+  }
+
+  await nextAnimationFrame()
+  await nextAnimationFrame()
+  await new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 180)
+  })
+
+  await writeLog('print layout settled', {
+    pageCount: pdfPages?.querySelectorAll('.page-wrapper').length ?? 0,
+    bodyWidth: document.body.scrollWidth,
+    bodyHeight: document.body.scrollHeight,
+  })
 }
 
 async function triggerPrintDialog(jobId: string) {

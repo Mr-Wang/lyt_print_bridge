@@ -1,68 +1,64 @@
-# GitHub 打版说明
+# GitHub 免费云打版说明
 
-这个项目可以用 GitHub Actions 做两类打版：
+这个项目的 GitHub Actions 只打 Linux deb，Windows 安装包继续本地构建。
 
-- `Release`：GitHub 官方 runner 自动打 Windows x64 安装包和 Ubuntu 22.04 x64 deb。适合常规发布和 CI 留档。
-- `Domestic self-hosted build`：跑在你自己的统信 UOS、银河麒麟等国产化机器上，适合真实国产化环境验收。
+## 免费方案边界
+
+- 仓库需要设置为 public，才能使用 GitHub 免费云 runner 打 x64 和 ARM64。
+- GitHub 免费云 runner 是 Ubuntu，不是统信 UOS 或银河麒麟。
+- 产物定位为 Ubuntu 通用 deb，需要再拿到 UOS/Kylin x86_64、ARM64 实机验证。
+- 如果以后必须在 UOS/Kylin 原生环境构建，需要改用 self-hosted runner 或国产化云主机。
 
 ## 首次上传到 GitHub
 
-本机初始化并推送：
-
 ```bash
-git init
-git add .
-git commit -m "Initial release workflow"
-git branch -M main
-git remote add origin git@github.com:<your-org-or-user>/lyt_print_bridge.git
+git remote add origin https://github.com/Mr-Wang/lyt_print_bridge.git
 git push -u origin main
 ```
 
-如果你不用 SSH，也可以把 `origin` 换成 GitHub 页面给出的 HTTPS 地址。
+如果远端已经存在 `origin`，改用：
 
-## 触发正式发布
+```bash
+git remote set-url origin https://github.com/Mr-Wang/lyt_print_bridge.git
+git push -u origin main
+```
 
-更新版本号后打 tag：
+## 触发 Linux deb 发布
+
+推送 `v*` tag：
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-GitHub 会自动运行 `.github/workflows/release.yml`，并把 Tauri 产物挂到对应 Release。
+GitHub 会运行 `.github/workflows/release.yml`，并在同一个 GitHub Release 中生成：
 
-也可以在 GitHub 仓库页面进入 `Actions`，选择 `Release`，点 `Run workflow` 手动打包。
+- `liaoyitong-print-bridge_0.1.0_linux_x64.deb`
+- `liaoyitong-print-bridge_0.1.0_linux_arm64.deb`
 
-## 国产化 runner 准备
+Release 默认是 draft。确认产物可用后，在 GitHub 页面手动发布即可。
 
-GitHub 官方 Linux runner 不是统信/麒麟环境。要做真正国产化打版，需要准备目标系统机器，然后在仓库：
+## 本地 Windows 打包
 
-1. 进入 `Settings` -> `Actions` -> `Runners`。
-2. 新增 self-hosted runner，按 GitHub 页面命令下载安装到目标机器。
-3. 给 x64 机器加标签：`linux`、`X64`、`domestic`。
-4. 给 ARM64 机器加标签：`linux`、`ARM64`、`domestic`。
-5. 在目标机预装 Node.js 20、Rust stable、Tauri Linux 依赖、系统打包工具。
-
-目标机常用依赖示例：
+Windows 不走 GitHub Actions：
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y \
-  build-essential \
-  curl \
-  file \
-  libgtk-3-dev \
-  libwebkit2gtk-4.0-dev \
-  libayatana-appindicator3-dev \
-  librsvg2-dev
+bash ./build_win.sh
 ```
 
-配置完 runner 后，在 `Actions` 里手动运行 `Domestic self-hosted build`，产物会上传到 workflow artifacts。
+## 国产化实机验证
 
-## 需要你提供或确认的东西
+下载 Release 里的 deb 后，在目标机器安装并验证：
 
-- GitHub 仓库归属：个人账号还是组织。
-- 仓库名：建议 `lyt_print_bridge` 或 `liaoyitong-print-bridge`。
-- 是否私有仓库。
-- 如果要真实国产化打版，需要一台统信/麒麟 x64 或 ARM64 机器接入 self-hosted runner。
-- 如果后续要代码签名，需要提供签名证书和 GitHub Secrets。
+```bash
+sudo apt install ./liaoyitong-print-bridge_0.1.0_linux_x64.deb
+```
+
+验证重点：
+
+- `LiaoyitongPrintBridge.ping()` 成功。
+- `fileUrl` 和 `fileBase64` 都能提交打印任务。
+- 系统打印选择框能弹出。
+- 关闭状态窗口后插件仍常驻托盘。
+- 桌面重新登录后插件能自动启动。

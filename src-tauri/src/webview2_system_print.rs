@@ -36,30 +36,39 @@ pub fn open_print_window(app: &AppHandle, job_id: &str, job_name: &str) -> Resul
                 serde_json::to_string(&target).unwrap()
             ))
             .map_err(|error| format!("刷新打印窗口失败: {error}"))?;
-        let _ = window.hide();
+        show_and_focus(&window);
         crate::diagnostics::write(
             app,
             "print_host",
-            format!("existing hidden print host refreshed label={label}"),
+            format!("existing visible print host refreshed label={label}"),
         );
         return Ok(());
     }
 
-    WindowBuilder::new(app, label, WindowUrl::App(target.into()))
+    let mut builder = WindowBuilder::new(app, label, WindowUrl::App(target.into()))
         .title(&format!("打印任务 - {job_name}"))
-        .visible(false)
-        .focused(false)
         .resizable(false)
-        .skip_taskbar(true)
-        .inner_size(980.0, 780.0)
+        .inner_size(980.0, 780.0);
+
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder.visible(true).focused(true).skip_taskbar(false);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        builder = builder.visible(false).focused(false).skip_taskbar(true);
+    }
+
+    builder
         .build()
         .map(|window| {
+            show_and_focus(&window);
             crate::diagnostics::write(
                 app,
                 "print_host",
-                format!("hidden print host built label={}", window.label()),
+                format!("visible print host built label={}", window.label()),
             );
-            let _ = window.hide();
         })
         .map_err(|error| {
             crate::diagnostics::write(
@@ -81,8 +90,12 @@ pub fn trigger_system_print_dialog(window: &Window) -> Result<(), String> {
         "print_window",
         format!("trigger_system_print_dialog label={}", window.label()),
     );
+    show_and_focus(window);
+
     #[cfg(target_os = "windows")]
     {
+        std::thread::sleep(Duration::from_millis(250));
+
         let scheduling_window = window.clone();
         let callback_window = window.clone();
         let (tx, rx) = mpsc::sync_channel(1);
@@ -150,7 +163,6 @@ pub fn print_window_label(job_id: &str) -> String {
     format!("{PRINT_WINDOW_PREFIX}{job_id}")
 }
 
-#[cfg(not(target_os = "windows"))]
 fn show_and_focus(window: &Window) {
     let _ = window.show();
     let _ = window.unminimize();
