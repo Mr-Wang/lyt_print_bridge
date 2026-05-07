@@ -303,15 +303,41 @@ impl AppState {
 }
 
 pub fn load_state(app: &AppHandle) -> Result<Arc<BridgeCore>, String> {
-    let config_dir = resolve_config_dir(app);
-    fs::create_dir_all(&config_dir).map_err(|error| format!("创建配置目录失败: {error}"))?;
+    let preferred_config_dir = resolve_config_dir(app);
+    let config_dir = match fs::create_dir_all(&preferred_config_dir) {
+        Ok(()) => preferred_config_dir,
+        Err(error) => {
+            crate::diagnostics::bootstrap(format!(
+                "create config dir failed path={} error={error}",
+                preferred_config_dir.display()
+            ));
+            let fallback = std::env::temp_dir().join("liaoyitong-print-bridge");
+            fs::create_dir_all(&fallback).map_err(|fallback_error| {
+                format!("创建配置目录失败: {error}; 创建备用配置目录失败: {fallback_error}")
+            })?;
+            fallback
+        }
+    };
 
-    let settings = BridgeSettings::default_for_dir(&config_dir).normalize(&config_dir);
-    fs::create_dir_all(&settings.download_dir)
-        .map_err(|error| format!("创建下载目录失败: {error}"))?;
+    let mut settings = BridgeSettings::default_for_dir(&config_dir).normalize(&config_dir);
+    if let Err(error) = fs::create_dir_all(&settings.download_dir) {
+        crate::diagnostics::bootstrap(format!(
+            "create download dir failed path={} error={error}",
+            settings.download_dir
+        ));
+        let fallback_download_dir = std::env::temp_dir()
+            .join("liaoyitong-print-bridge")
+            .join("downloads");
+        fs::create_dir_all(&fallback_download_dir).map_err(|fallback_error| {
+            format!("创建下载目录失败: {error}; 创建备用下载目录失败: {fallback_error}")
+        })?;
+        settings.download_dir = fallback_download_dir.to_string_lossy().into_owned();
+    }
 
     let core = Arc::new(BridgeCore::new(settings, config_dir));
-    persist_settings(core.as_ref())?;
+    if let Err(error) = persist_settings(core.as_ref()) {
+        crate::diagnostics::bootstrap(format!("persist settings failed: {error}"));
+    }
     Ok(core)
 }
 

@@ -5,6 +5,10 @@ pub fn ensure_enabled() -> Result<(), String> {
     ensure_platform_autostart(exe_path)
 }
 
+pub fn cleanup_legacy_processes() {
+    cleanup_platform_legacy_processes();
+}
+
 #[cfg(target_os = "windows")]
 fn ensure_platform_autostart(exe_path: PathBuf) -> Result<(), String> {
     let exe = exe_path.to_string_lossy();
@@ -31,6 +35,26 @@ fn ensure_platform_autostart(exe_path: PathBuf) -> Result<(), String> {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn cleanup_platform_legacy_processes() {
+    let current_name = std::env::current_exe()
+        .ok()
+        .and_then(|path| {
+            path.file_name()
+                .map(|name| name.to_string_lossy().to_string())
+        })
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if current_name == "lyt_print_bridge.exe" {
+        return;
+    }
+
+    let _ = std::process::Command::new("taskkill")
+        .args(["/IM", "lyt_print_bridge.exe", "/F"])
+        .status();
+}
+
 #[cfg(target_os = "linux")]
 fn ensure_platform_autostart(exe_path: PathBuf) -> Result<(), String> {
     let home = std::env::var_os("HOME").ok_or_else(|| "未找到 HOME 目录".to_string())?;
@@ -45,6 +69,9 @@ fn ensure_platform_autostart(exe_path: PathBuf) -> Result<(), String> {
     );
     std::fs::write(desktop_file, content).map_err(|error| format!("写入开机自启文件失败: {error}"))
 }
+
+#[cfg(not(target_os = "windows"))]
+fn cleanup_platform_legacy_processes() {}
 
 #[cfg(target_os = "macos")]
 fn ensure_platform_autostart(_exe_path: PathBuf) -> Result<(), String> {

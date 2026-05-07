@@ -18,6 +18,7 @@ pub struct ServiceState {
 }
 
 pub fn run() {
+    diagnostics::bootstrap("process started");
     let tray_menu = SystemTrayMenu::new()
         .add_item(CustomMenuItem::new("open_status", "打开状态"))
         .add_item(CustomMenuItem::new("open_log", "打开日志"))
@@ -26,7 +27,15 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .system_tray(SystemTray::new().with_menu(tray_menu))
         .setup(|app| {
-            let core = load_state(&app.handle())?;
+            diagnostics::bootstrap("setup entered");
+            autostart::cleanup_legacy_processes();
+            let core = match load_state(&app.handle()) {
+                Ok(core) => core,
+                Err(error) => {
+                    diagnostics::bootstrap(format!("load_state failed: {error}"));
+                    return Err(error.into());
+                }
+            };
             let app_state = AppState::new(core);
             app.manage(app_state);
             app.manage(ServiceState::default());
