@@ -1,5 +1,5 @@
 #!/bin/bash
-set -u
+set -euo pipefail
 
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 export NVM_DIR="$HOME/.nvm"
@@ -15,6 +15,7 @@ mkdir -p "$XWIN_CACHE_DIR"
 
 # Use the native macOS makensis extracted locally.
 export NSISDIR="$HOME/.local/opt/makensis/3.12/share/nsis"
+MAKENSIS_BIN="${MAKENSIS_BIN:-makensis}"
 
 TARGET_DIR="src-tauri/target/x86_64-pc-windows-msvc/release"
 NSIS_SCRIPT_DIR="$TARGET_DIR/nsis/x64"
@@ -32,6 +33,8 @@ echo "XWIN_CACHE_DIR: $XWIN_CACHE_DIR"
 echo "NSISDIR: $NSISDIR"
 echo "Starting Windows Build..."
 
+rm -f "$NSIS_OUTPUT" "$SETUP_EXE" "$LEGACY_SETUP_EXE"
+
 if npm run build:win; then
   exit 0
 fi
@@ -43,8 +46,8 @@ if [ ! -f "$NSIS_SCRIPT_DIR/installer.nsi" ]; then
   exit 1
 fi
 
-if ! command -v makensis >/dev/null 2>&1; then
-  echo "makensis is not installed or not in PATH"
+if ! command -v "$MAKENSIS_BIN" >/dev/null 2>&1; then
+  echo "makensis is not installed or not in PATH: $MAKENSIS_BIN"
   exit 1
 fi
 
@@ -71,7 +74,7 @@ cp "$CRATE_EXE" "$PRODUCT_EXE"
 mkdir -p "$BUNDLE_DIR"
 (
   cd "$NSIS_SCRIPT_DIR" && \
-  makensis installer.nsi
+  "$MAKENSIS_BIN" installer.nsi
 )
 
 if [ ! -f "$NSIS_OUTPUT" ]; then
