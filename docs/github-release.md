@@ -52,7 +52,7 @@ bash ./build_win.sh
 下载 Release 里的 deb 后，在目标机器安装并验证：
 
 ```bash
-sudo apt install ./liaoyitong-print-bridge_0.1.0_linux_x64.deb
+sudo apt install ./liaoyitong-print-bridge_0.1.18_linux_x64.deb
 ```
 
 验证重点：
@@ -62,3 +62,10 @@ sudo apt install ./liaoyitong-print-bridge_0.1.0_linux_x64.deb
 - 系统打印选择框能弹出。
 - 关闭状态窗口后插件仍常驻托盘。
 - 桌面重新登录后插件能自动启动。
+
+## v0.1.18 国产化测试点
+
+- Windows 继续保留 v0.1.17 的原生打印对话框链路。
+- Linux/UOS/Kylin 打印窗口改为加载内置 `print-host` 页面，由 PDF.js 渲染本地 PDF 后再触发系统打印，避免依赖 WebKitGTK 直接打开 PDF。
+- Linux 打印机列表读取改为通过 CUPS 的 `lpstat` 查询，便于第三方 Demo 做连通性测试。
+- GitHub Actions 会产出 x64 和 ARM64 两个 deb 包；云 runner 是 Ubuntu 通用环境，最终仍以 UOS/麒麟实机结果为准。

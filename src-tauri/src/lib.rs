@@ -43,7 +43,7 @@ const DIAGNOSTIC_EVAL_SCRIPT: &str = r#"
       document.body.appendChild(marker);
     }
 
-    marker.textContent = 'v0.1.17 诊断脚本已执行 - 请打开 Console 查看红色报错';
+    marker.textContent = 'v0.1.18 诊断脚本已执行 - 请打开 Console 查看红色报错';
     marker.style.cssText = [
       'position:fixed',
       'left:8px',
@@ -254,7 +254,7 @@ fn create_status_window(
     );
 
     let window = WindowBuilder::new(app, "main", WindowUrl::App("status.html".into()))
-        .title("辽易通打印桥 v0.1.17")
+        .title("辽易通打印桥 v0.1.18")
         .inner_size(360.0, 220.0)
         .min_inner_size(360.0, 220.0)
         .resizable(false)

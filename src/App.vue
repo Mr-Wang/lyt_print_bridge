@@ -124,7 +124,7 @@ onUnmounted(() => {
   <main class="plugin-shell">
     <section class="topbar">
       <div>
-        <h1>辽易通打印桥 v0.1.17</h1>
+        <h1>辽易通打印桥 v0.1.18</h1>
         <p>{{ state?.service.baseUrl ?? '正在启动本地服务...' }}</p>
       </div>
       <span :class="['status-dot', state?.service.running ? 'is-ok' : 'is-bad']"></span>

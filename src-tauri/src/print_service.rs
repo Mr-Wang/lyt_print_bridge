@@ -518,7 +518,30 @@ pub fn list_printers() -> Result<Vec<String>, String> {
         ));
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        let mut errors = Vec::new();
+
+        for (program, args) in linux_printer_queries() {
+            match run_linux_text_command(program, args) {
+                Ok(output) => {
+                    let printers = parse_printer_lines(&output);
+                    if !printers.is_empty() {
+                        return Ok(printers);
+                    }
+                    errors.push(format!("{program} 未返回打印机名称"));
+                }
+                Err(error) => errors.push(format!("{program}: {error}")),
+            }
+        }
+
+        return Err(format!(
+            "未能读取本机打印机列表。请确认 CUPS 打印服务正常，或把错误信息发我：{}",
+            errors.join(" | ")
+        ));
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         Ok(Vec::new())
     }
@@ -730,7 +753,34 @@ fn decode_windows_output(bytes: &[u8]) -> String {
         .to_string()
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(target_os = "linux")]
+fn linux_printer_queries() -> Vec<(&'static str, &'static [&'static str])> {
+    vec![
+        ("lpstat", &["-e"]),
+        ("lpstat", &["-p"]),
+    ]
+}
+
+#[cfg(target_os = "linux")]
+fn run_linux_text_command(program: &str, args: &[&str]) -> Result<String, String> {
+    let output = std::process::Command::new(program)
+        .args(args)
+        .output()
+        .map_err(|error| format!("执行失败: {error}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(if stderr.trim().is_empty() {
+            format!("退出码 {}", output.status)
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 fn parse_printer_lines(output: &str) -> Vec<String> {
     let mut printers = Vec::new();
 
@@ -739,6 +789,10 @@ fn parse_printer_lines(output: &str) -> Vec<String> {
         if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("name") {
             continue;
         }
+        let trimmed = trimmed
+            .strip_prefix("printer ")
+            .and_then(|value| value.split_whitespace().next())
+            .unwrap_or(trimmed);
         if !printers.iter().any(|value| value == trimmed) {
             printers.push(trimmed.to_string());
         }

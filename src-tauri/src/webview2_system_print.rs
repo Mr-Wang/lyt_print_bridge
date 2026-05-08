@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+#[cfg(target_os = "windows")]
 use crate::app_state::{FIXED_ACCESS_TOKEN, FIXED_PORT};
 use tauri::{AppHandle, Manager, Window, WindowBuilder, WindowUrl};
 #[cfg(target_os = "windows")]
@@ -14,9 +15,7 @@ const PRINT_WINDOW_PREFIX: &str = "print-job-";
 
 pub fn open_print_window(app: &AppHandle, job_id: &str, job_name: &str) -> Result<(), String> {
     let label = print_window_label(job_id);
-    let target = format!(
-        "http://127.0.0.1:{FIXED_PORT}/printer/jobs/{job_id}/document?token={FIXED_ACCESS_TOKEN}"
-    );
+    let target = print_window_target(job_id);
     crate::diagnostics::write(
         app,
         "print_window",
@@ -43,10 +42,8 @@ pub fn open_print_window(app: &AppHandle, job_id: &str, job_name: &str) -> Resul
         return Ok(());
     }
 
-    let print_url = target
-        .parse()
-        .map_err(|error| format!("解析打印窗口地址失败: {error}"))?;
-    let mut builder = WindowBuilder::new(app, label.clone(), WindowUrl::External(print_url))
+    let window_url = print_window_url(&target)?;
+    let mut builder = WindowBuilder::new(app, label.clone(), window_url)
         .title(&format!("打印任务 - {job_name}"))
         .resizable(false)
         .inner_size(980.0, 780.0);
@@ -95,6 +92,35 @@ pub fn open_print_window(app: &AppHandle, job_id: &str, job_name: &str) -> Resul
             );
             format!("创建打印窗口失败: {error}")
         })
+}
+
+fn print_window_target(job_id: &str) -> String {
+    #[cfg(target_os = "windows")]
+    {
+        format!(
+            "http://127.0.0.1:{FIXED_PORT}/printer/jobs/{job_id}/document?token={FIXED_ACCESS_TOKEN}"
+        )
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        format!("index.html#printHost=1&job={job_id}")
+    }
+}
+
+fn print_window_url(target: &str) -> Result<WindowUrl, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let print_url = target
+            .parse()
+            .map_err(|error| format!("解析打印窗口地址失败: {error}"))?;
+        Ok(WindowUrl::External(print_url))
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(WindowUrl::App(target.into()))
+    }
 }
 
 fn native_navigate(window: &Window, target: &str) -> Result<(), String> {
