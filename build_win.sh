@@ -26,6 +26,15 @@ CRATE_EXE="$TARGET_DIR/lyt_print_bridge.exe"
 SETUP_EXE="$BUNDLE_DIR/liaoyitong-print-bridge_0.1.0_x64-setup.exe"
 LEGACY_SETUP_EXE="$BUNDLE_DIR/lyt_print_bridge_0.1.0_x64-setup.exe"
 
+assert_no_task_dialog_import() {
+  if command -v objdump >/dev/null 2>&1 && [ -f "$PRODUCT_EXE" ]; then
+    if objdump -p "$PRODUCT_EXE" | grep -q "TaskDialogIndirect"; then
+      echo "Windows executable still imports TaskDialogIndirect; aborting unsafe package."
+      exit 1
+    fi
+  fi
+}
+
 echo "Current Node Version:"
 node -v
 
@@ -36,6 +45,7 @@ echo "Starting Windows Build..."
 rm -f "$NSIS_OUTPUT" "$SETUP_EXE" "$LEGACY_SETUP_EXE"
 
 if npm run build:win; then
+  assert_no_task_dialog_import
   exit 0
 fi
 
@@ -51,25 +61,22 @@ if ! command -v "$MAKENSIS_BIN" >/dev/null 2>&1; then
   exit 1
 fi
 
-RESOURCE_RES="$(find "$TARGET_DIR/build" -path '*/out/resource.lib' -size +1k -print 2>/dev/null | head -n 1)"
-if [ -z "$RESOURCE_RES" ]; then
-  echo "Missing compiled Windows resource file with manifest under $TARGET_DIR/build"
+if [ -f "$CRATE_EXE" ]; then
+  REBUILT_EXE="$CRATE_EXE"
+elif [ -f "$PRODUCT_EXE" ]; then
+  REBUILT_EXE="$PRODUCT_EXE"
+else
+  echo "Missing rebuilt executable: $CRATE_EXE or $PRODUCT_EXE"
   exit 1
 fi
 
-echo "Rebuilding main executable with Windows manifest resource..."
-(
-  cd src-tauri && \
-  RUSTFLAGS="-C link-arg=$(cd .. && pwd)/$RESOURCE_RES" \
-    cargo xwin build --target x86_64-pc-windows-msvc --release
-)
-
-if [ ! -f "$CRATE_EXE" ]; then
-  echo "Missing rebuilt executable: $CRATE_EXE"
-  exit 1
+echo "Using rebuilt executable from cargo-xwin:"
+echo "  $REBUILT_EXE"
+if [ "$REBUILT_EXE" != "$PRODUCT_EXE" ]; then
+  cp "$REBUILT_EXE" "$PRODUCT_EXE"
 fi
 
-cp "$CRATE_EXE" "$PRODUCT_EXE"
+assert_no_task_dialog_import
 
 mkdir -p "$BUNDLE_DIR"
 (
