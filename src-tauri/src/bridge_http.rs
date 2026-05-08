@@ -2,6 +2,7 @@ use serde::Serialize;
 use serde_json::json;
 use std::{
     collections::HashMap,
+    fs,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     sync::{
@@ -14,7 +15,7 @@ use std::{
 use tauri::AppHandle;
 
 use crate::{
-    app_state::{emit_snapshot, AppState, PrintRequestPayload},
+    app_state::{emit_snapshot, AppState, PrintRequestPayload, FIXED_ACCESS_TOKEN},
     print_service, ServiceState,
 };
 
@@ -184,6 +185,7 @@ fn dispatch_request(
     }
 
     match (request.method.as_str(), request.path.as_str()) {
+        ("GET", "/") | ("GET", "/status") => status_page_response(cors_origin),
         ("GET", "/printer/ping") => json_response(
             200,
             &json!({
@@ -222,6 +224,39 @@ fn dispatch_request(
                 }
             }
         }
+        _ if request.method == "GET"
+            && request.path.starts_with("/printer/jobs/")
+            && request.path.ends_with("/document") =>
+        {
+            if !is_authorized(&state.core.settings().access_token, &request) {
+                return error_response(401, "missing or invalid bridge token", cors_origin);
+            }
+
+            let job_id = request
+                .path
+                .trim_start_matches("/printer/jobs/")
+                .trim_end_matches("/document")
+                .trim_end_matches('/');
+            match state.core.find_job(job_id) {
+                Some(job) => match job.local_file_path {
+                    Some(path) => match fs::read(&path) {
+                        Ok(bytes) => binary_response(
+                            200,
+                            "application/pdf".into(),
+                            bytes,
+                            cors_origin,
+                        ),
+                        Err(error) => error_response(
+                            404,
+                            &format!("document file not readable: {error}"),
+                            cors_origin,
+                        ),
+                    },
+                    None => error_response(404, "job document not ready", cors_origin),
+                },
+                None => error_response(404, "job not found", cors_origin),
+            }
+        }
         _ if request.method == "GET" && request.path.starts_with("/printer/jobs/") => {
             if !is_authorized(&state.core.settings().access_token, &request) {
                 return error_response(401, "missing or invalid bridge token", cors_origin);
@@ -253,6 +288,7 @@ fn is_authorized(expected_token: &str, request: &HttpRequest) -> bool {
                     .map(|token| token == expected_token)
             })
         })
+        .or_else(|| request.query_param("token").map(|value| value == expected_token))
         .unwrap_or(false)
 }
 
@@ -316,7 +352,9 @@ fn read_request(stream: &mut TcpStream) -> Result<HttpRequest, String> {
     let target = parts
         .next()
         .ok_or_else(|| "missing HTTP target".to_string())?;
-    let path = target.split('?').next().unwrap_or(target).to_string();
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    let path = path.to_string();
+    let query = query.to_string();
 
     let mut headers = HashMap::new();
     for line in lines {
@@ -332,6 +370,7 @@ fn read_request(stream: &mut TcpStream) -> Result<HttpRequest, String> {
     Ok(HttpRequest {
         method: method.to_string(),
         path,
+        query,
         headers,
         body: buffer[body_start..body_start + content_length].to_vec(),
     })
@@ -422,6 +461,33 @@ fn json_response<T: Serialize>(
     }
 }
 
+fn binary_response(
+    status: u16,
+    content_type: String,
+    body: Vec<u8>,
+    cors_origin: Option<String>,
+) -> HttpResponse {
+    HttpResponse {
+        status,
+        content_type,
+        body,
+        cors_origin,
+    }
+}
+
+fn html_response(status: u16, body: String, cors_origin: Option<String>) -> HttpResponse {
+    HttpResponse {
+        status,
+        content_type: "text/html; charset=utf-8".into(),
+        body: body.into_bytes(),
+        cors_origin,
+    }
+}
+
+fn status_page_response(cors_origin: Option<String>) -> HttpResponse {
+    html_response(200, status_page_html(), cors_origin)
+}
+
 fn error_response(status: u16, message: &str, cors_origin: Option<String>) -> HttpResponse {
     json_response(status, &json!({ "error": message }), cors_origin)
 }
@@ -438,6 +504,7 @@ fn empty_response(status: u16, cors_origin: Option<String>) -> HttpResponse {
 struct HttpRequest {
     method: String,
     path: String,
+    query: String,
     headers: HashMap<String, String>,
     body: Vec<u8>,
 }
@@ -448,6 +515,17 @@ impl HttpRequest {
             .get(&name.to_ascii_lowercase())
             .map(|value| value.as_str())
     }
+
+    fn query_param(&self, name: &str) -> Option<&str> {
+        self.query.split('&').find_map(|part| {
+            let (key, value) = part.split_once('=')?;
+            if key == name {
+                Some(value)
+            } else {
+                None
+            }
+        })
+    }
 }
 
 struct HttpResponse {
@@ -455,4 +533,142 @@ struct HttpResponse {
     content_type: String,
     body: Vec<u8>,
     cors_origin: Option<String>,
+}
+
+fn status_page_html() -> String {
+    format!(
+        r#"<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>辽易通打印桥 v{version}</title>
+  <style>
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background: #f6f8fb;
+      color: #172033;
+      font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+    }}
+    main {{
+      width: min(760px, calc(100vw - 32px));
+      margin: 28px auto;
+    }}
+    h1 {{
+      margin: 0 0 6px;
+      font-size: 22px;
+      font-weight: 700;
+    }}
+    .muted {{ color: #637083; }}
+    .grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin: 18px 0;
+    }}
+    .card {{
+      background: #fff;
+      border: 1px solid #d9e1ec;
+      border-radius: 8px;
+      padding: 14px;
+    }}
+    .card span {{
+      display: block;
+      color: #637083;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }}
+    .card strong {{
+      font-size: 18px;
+    }}
+    button {{
+      border: 1px solid #bac7d6;
+      border-radius: 6px;
+      background: #fff;
+      color: #172033;
+      padding: 8px 12px;
+      cursor: pointer;
+      margin-right: 8px;
+    }}
+    pre {{
+      min-height: 220px;
+      overflow: auto;
+      background: #101827;
+      color: #d7e1ef;
+      border-radius: 8px;
+      padding: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }}
+    .ok {{ color: #087f5b; }}
+    .bad {{ color: #c92a2a; }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>辽易通打印桥 v{version}</h1>
+    <section class="grid">
+      <div class="card"><span>服务状态</span><strong id="service">检测中</strong></div>
+      <div class="card"><span>本地地址</span><strong id="base-url">-</strong></div>
+      <div class="card"><span>最近任务</span><strong id="job-count">-</strong></div>
+    </section>
+    <p>
+      <button id="refresh">刷新</button>
+      <button id="copy">复制诊断信息</button>
+    </p>
+    <pre id="log">正在读取本地服务...</pre>
+  </main>
+  <script>
+    var token = "{token}";
+    var logEl = document.getElementById('log');
+    function write(line) {{
+      var time = new Date().toISOString();
+      logEl.textContent += "\n[" + time + "] " + line;
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log('[browser-status]', line);
+    }}
+    async function getJson(path, options) {{
+      var response = await fetch(path, options || {{}});
+      var text = await response.text();
+      try {{
+        return {{ ok: response.ok, status: response.status, body: JSON.parse(text) }};
+      }} catch (error) {{
+        return {{ ok: response.ok, status: response.status, body: text }};
+      }}
+    }}
+    async function refresh() {{
+      logEl.textContent = '';
+      write('refresh started: ' + location.href);
+      try {{
+        var ping = await getJson('/printer/ping');
+        write('GET /printer/ping HTTP ' + ping.status + ' ' + JSON.stringify(ping.body));
+        var service = ping.body && ping.body.service ? ping.body.service : null;
+        document.getElementById('service').textContent = service && service.running ? '运行中' : '异常';
+        document.getElementById('service').className = service && service.running ? 'ok' : 'bad';
+        document.getElementById('base-url').textContent = service && service.baseUrl ? service.baseUrl : location.origin;
+
+        var jobs = await getJson('/printer/jobs', {{
+          headers: {{ 'X-Print-Bridge-Token': token }}
+        }});
+        write('GET /printer/jobs HTTP ' + jobs.status + ' ' + JSON.stringify(jobs.body));
+        document.getElementById('job-count').textContent = jobs.body && jobs.body.jobs ? jobs.body.jobs.length : '0';
+      }} catch (error) {{
+        write('诊断页请求失败: ' + (error && error.stack ? error.stack : error));
+        document.getElementById('service').textContent = '异常';
+        document.getElementById('service').className = 'bad';
+      }}
+    }}
+    document.getElementById('refresh').onclick = refresh;
+    document.getElementById('copy').onclick = async function () {{
+      await navigator.clipboard.writeText(logEl.textContent);
+      write('诊断信息已复制');
+    }};
+    refresh();
+  </script>
+</body>
+</html>"#,
+        version = env!("CARGO_PKG_VERSION"),
+        token = FIXED_ACCESS_TOKEN
+    )
 }

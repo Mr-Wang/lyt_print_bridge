@@ -45,6 +45,7 @@ echo "Starting Windows Build..."
 
 rm -f "$NSIS_OUTPUT" "$SETUP_EXE" "$LEGACY_SETUP_EXE"
 rm -f "$BUNDLE_DIR"/liaoyitong-print-bridge_*_x64-setup.exe "$BUNDLE_DIR"/lyt_print_bridge_*_x64-setup.exe
+rm -f "$PRODUCT_EXE" "$CRATE_EXE"
 
 if npm run build:win; then
   assert_no_task_dialog_import

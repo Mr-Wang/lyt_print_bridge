@@ -46,17 +46,22 @@ pub fn desktop_log_file() -> Option<PathBuf> {
 }
 
 fn bootstrap_targets() -> Vec<PathBuf> {
-    let mut targets = vec![std::env::temp_dir()
-        .join("liaoyitong-print-bridge-logs")
-        .join(LOG_FILE_NAME)];
+    let mut targets = Vec::new();
+    push_unique_target(
+        &mut targets,
+        std::env::temp_dir()
+            .join("liaoyitong-print-bridge-logs")
+            .join(LOG_FILE_NAME),
+    );
 
     if let Some(desktop_log_file) = desktop_log_file() {
-        targets.push(desktop_log_file);
+        push_unique_target(&mut targets, desktop_log_file);
     }
 
     #[cfg(target_os = "windows")]
     if let Some(user_profile) = std::env::var_os("USERPROFILE") {
-        targets.push(
+        push_unique_target(
+            &mut targets,
             PathBuf::from(user_profile)
                 .join("Desktop")
                 .join(DESKTOP_LOG_DIR_NAME)
@@ -65,6 +70,16 @@ fn bootstrap_targets() -> Vec<PathBuf> {
     }
 
     targets
+}
+
+fn push_unique_target(targets: &mut Vec<PathBuf>, target: PathBuf) {
+    let target_text = target.to_string_lossy();
+    if !targets
+        .iter()
+        .any(|existing| existing.to_string_lossy().eq_ignore_ascii_case(&target_text))
+    {
+        targets.push(target);
+    }
 }
 
 pub fn ensure_log_file(app: &AppHandle) -> Result<PathBuf, String> {

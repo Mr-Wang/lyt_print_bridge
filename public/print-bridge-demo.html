@@ -46,6 +46,10 @@
         cursor: pointer;
       }
 
+      button.secondary {
+        background: #475467;
+      }
+
       pre {
         overflow: auto;
         border-radius: 8px;
@@ -60,6 +64,7 @@
       <section>
         <h1>辽易通打印插件 Demo</h1>
         <button id="ping" type="button">检测插件</button>
+        <button id="listPrinters" class="secondary" type="button">读取打印机列表</button>
         <input id="fileUrl" type="url" placeholder="PDF 地址，例如 https://example.com/test.pdf" />
         <button id="printUrl" type="button">打印 PDF 地址</button>
         <input id="fileInput" type="file" accept="application/pdf" />
@@ -83,9 +88,21 @@
         }
       })
 
+      document.getElementById('listPrinters').addEventListener('click', async function () {
+        try {
+          show(await LiaoyitongPrintBridge.listPrinters())
+        } catch (error) {
+          show(error.message)
+        }
+      })
+
       document.getElementById('printUrl').addEventListener('click', async function () {
         try {
           var fileUrl = document.getElementById('fileUrl').value.trim()
+          if (!fileUrl) {
+            show('请输入 PDF 地址')
+            return
+          }
           show(await LiaoyitongPrintBridge.printPdf({ jobName: '网页 PDF 打印', fileUrl: fileUrl }))
         } catch (error) {
           show(error.message)
@@ -100,20 +117,7 @@
             return
           }
 
-          var reader = new FileReader()
-          reader.onload = async function () {
-            var fileBase64 = String(reader.result).split(',')[1]
-            try {
-              show(await LiaoyitongPrintBridge.printPdf({
-                jobName: file.name,
-                fileName: file.name,
-                fileBase64: fileBase64,
-              }))
-            } catch (error) {
-              show(error.message)
-            }
-          }
-          reader.readAsDataURL(file)
+          show(await LiaoyitongPrintBridge.printLocalFile(file))
         } catch (error) {
           show(error.message)
         }

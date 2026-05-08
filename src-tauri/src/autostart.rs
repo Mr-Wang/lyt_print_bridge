@@ -1,5 +1,8 @@
 use std::path::PathBuf;
 
+#[cfg(target_os = "windows")]
+use std::{os::windows::process::CommandExt, process::Command};
+
 pub fn ensure_enabled() -> Result<(), String> {
     let exe_path = std::env::current_exe().map_err(|error| format!("获取程序路径失败: {error}"))?;
     ensure_platform_autostart(exe_path)
@@ -13,7 +16,8 @@ pub fn cleanup_legacy_processes() {
 fn ensure_platform_autostart(exe_path: PathBuf) -> Result<(), String> {
     let exe = exe_path.to_string_lossy();
     let quoted = format!("\"{exe}\"");
-    let status = std::process::Command::new("reg")
+    let mut command = hidden_command("reg");
+    let status = command
         .args([
             "add",
             r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
@@ -50,9 +54,18 @@ fn cleanup_platform_legacy_processes() {
         return;
     }
 
-    let _ = std::process::Command::new("taskkill")
+    let mut command = hidden_command("taskkill");
+    let _ = command
         .args(["/IM", "lyt_print_bridge.exe", "/F"])
         .status();
+}
+
+#[cfg(target_os = "windows")]
+fn hidden_command(program: &str) -> Command {
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    let mut command = Command::new(program);
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
 }
 
 #[cfg(target_os = "linux")]

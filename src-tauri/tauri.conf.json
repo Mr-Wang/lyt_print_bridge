@@ -1,7 +1,7 @@
 {
   "package": {
     "productName": "liaoyitong-print-bridge",
-    "version": "0.1.2"
+    "version": "0.1.17"
   },
   "build": {
     "distDir": "../dist",
@@ -42,20 +42,7 @@
         "open": true
       }
     },
-    "windows": [
-        {
-          "label": "main",
-          "url": "status.html",
-          "title": "辽易通打印桥 v0.1.2",
-        "width": 360,
-        "height": 220,
-        "minWidth": 360,
-        "minHeight": 220,
-        "resizable": false,
-        "fullscreen": false,
-        "visible": true
-      }
-    ],
+    "windows": [],
     "systemTray": {
       "iconPath": "icons/icon.png",
       "iconAsTemplate": false

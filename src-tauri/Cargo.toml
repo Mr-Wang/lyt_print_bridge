@@ -1,6 +1,6 @@
 [package]
 name = "lyt_print_bridge"
-version = "0.1.2"
+version = "0.1.17"
 description = "Local PDF print bridge for browser initiated jobs"
 authors = ["wangyang"]
 license = ""
@@ -26,8 +26,9 @@ rand = "0.8"
 reqwest = { version = "0.11", default-features = false, features = ["blocking", "json", "native-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tauri = { version = "^1.7", features = ["shell-open", "fs-all", "path-all", "icon-ico", "system-tray"] }
+tauri = { version = "^1.7", features = ["shell-open", "fs-all", "path-all", "icon-ico", "system-tray", "devtools"] }
 
 [target.'cfg(windows)'.dependencies]
+lopdf = { version = "0.34", default-features = false, features = ["nom_parser"] }
 webview2-com = "0.19.1"
-windows = { version = "0.39.0", features = ["Win32_Foundation", "Win32_System_WinRT"] }
+windows = { version = "0.39.0", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Memory", "Win32_System_WinRT", "Win32_UI_Controls_Dialogs"] }

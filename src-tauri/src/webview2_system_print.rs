@@ -1,9 +1,9 @@
-#[cfg(target_os = "windows")]
-use std::sync::mpsc;
-#[cfg(target_os = "windows")]
 use std::time::Duration;
 
+use crate::app_state::{FIXED_ACCESS_TOKEN, FIXED_PORT};
 use tauri::{AppHandle, Manager, Window, WindowBuilder, WindowUrl};
+#[cfg(target_os = "windows")]
+use webview2_com::CoTaskMemPWSTR;
 
 #[cfg(target_os = "windows")]
 use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_15_Vtbl;
@@ -14,7 +14,9 @@ const PRINT_WINDOW_PREFIX: &str = "print-job-";
 
 pub fn open_print_window(app: &AppHandle, job_id: &str, job_name: &str) -> Result<(), String> {
     let label = print_window_label(job_id);
-    let target = format!("index.html#printHost=1&job={job_id}");
+    let target = format!(
+        "http://127.0.0.1:{FIXED_PORT}/printer/jobs/{job_id}/document?token={FIXED_ACCESS_TOKEN}"
+    );
     crate::diagnostics::write(
         app,
         "print_window",
@@ -30,22 +32,21 @@ pub fn open_print_window(app: &AppHandle, job_id: &str, job_name: &str) -> Resul
             "print_window",
             format!("reuse existing window label={} target={}", label, target),
         );
-        window
-            .eval(&format!(
-                "window.location.replace({});",
-                serde_json::to_string(&target).unwrap()
-            ))
-            .map_err(|error| format!("刷新打印窗口失败: {error}"))?;
+        native_navigate(&window, &target)?;
         show_and_focus(&window);
+        schedule_print_dialog(window.clone(), job_id.to_string());
         crate::diagnostics::write(
             app,
             "print_host",
-            format!("existing visible print host refreshed label={label}"),
+            format!("existing print host navigated to local document label={label}"),
         );
         return Ok(());
     }
 
-    let mut builder = WindowBuilder::new(app, label, WindowUrl::App(target.into()))
+    let print_url = target
+        .parse()
+        .map_err(|error| format!("解析打印窗口地址失败: {error}"))?;
+    let mut builder = WindowBuilder::new(app, label.clone(), WindowUrl::External(print_url))
         .title(&format!("打印任务 - {job_name}"))
         .resizable(false)
         .inner_size(980.0, 780.0);
@@ -64,10 +65,22 @@ pub fn open_print_window(app: &AppHandle, job_id: &str, job_name: &str) -> Resul
         .build()
         .map(|window| {
             show_and_focus(&window);
+            if let Err(error) = native_navigate(&window, &target) {
+                crate::diagnostics::write(
+                    app,
+                    "print_window",
+                    format!(
+                        "native navigate failed after build label={} error={}",
+                        window.label(),
+                        error
+                    ),
+                );
+            }
+            schedule_print_dialog(window.clone(), job_id.to_string());
             crate::diagnostics::write(
                 app,
                 "print_host",
-                format!("visible print host built label={}", window.label()),
+                format!("visible print host built with local document label={}", window.label()),
             );
         })
         .map_err(|error| {
@@ -76,12 +89,103 @@ pub fn open_print_window(app: &AppHandle, job_id: &str, job_name: &str) -> Resul
                 "print_window",
                 format!(
                     "window build failed label={} error={}",
-                    print_window_label(job_id),
+                    label,
                     error
                 ),
             );
             format!("创建打印窗口失败: {error}")
         })
+}
+
+fn native_navigate(window: &Window, target: &str) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        native_navigate_windows(window, target)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        window
+            .eval(&format!(
+                "window.location.replace({});",
+                serde_json::to_string(target).unwrap()
+            ))
+            .map_err(|error| format!("刷新打印窗口失败: {error}"))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn native_navigate_windows(window: &Window, target: &str) -> Result<(), String> {
+    let app = window.app_handle();
+    let label = window.label().to_string();
+    let target = target.to_string();
+    window
+        .with_webview(move |webview| unsafe {
+            crate::diagnostics::write(
+                &app,
+                "print_window",
+                format!("native navigate entered label={label} target={target}"),
+            );
+            let controller = webview.controller();
+            match controller
+                .CoreWebView2()
+                .map_err(|error| format!("获取 WebView2 Core 失败: {error}"))
+                .and_then(|core| {
+                    let url = CoTaskMemPWSTR::from(target.as_str());
+                    core.Navigate(*url.as_ref().as_pcwstr())
+                        .map_err(|error| format!("WebView2 Navigate 失败: {error}"))
+                }) {
+                Ok(()) => crate::diagnostics::write(
+                    &app,
+                    "print_window",
+                    format!("native navigate dispatched label={label}"),
+                ),
+                Err(error) => crate::diagnostics::write(
+                    &app,
+                    "print_window",
+                    format!("native navigate failed label={} error={}", label, error),
+                ),
+            }
+        })
+        .map_err(|error| format!("切换到打印 WebView 导航失败: {error}"))
+}
+
+fn schedule_print_dialog(window: Window, job_id: String) {
+    let label = window.label().to_string();
+    let label_for_error = label.clone();
+    let app = window.app_handle();
+    let app_for_error = app.clone();
+    if let Err(error) = std::thread::Builder::new()
+        .name(format!("print-dialog-{job_id}"))
+        .spawn(move || {
+            crate::diagnostics::write(
+                &app,
+                "print_window",
+                format!("scheduled print dialog waiting label={label} job_id={job_id}"),
+            );
+            std::thread::sleep(Duration::from_millis(3500));
+            match trigger_system_print_dialog(&window) {
+                Ok(()) => crate::diagnostics::write(
+                    &app,
+                    "print_window",
+                    format!("scheduled print dialog triggered label={label} job_id={job_id}"),
+                ),
+                Err(error) => crate::diagnostics::write(
+                    &app,
+                    "print_window",
+                    format!(
+                        "scheduled print dialog failed label={} job_id={} error={}",
+                        label, job_id, error
+                    ),
+                ),
+            }
+        }) {
+        crate::diagnostics::write(
+            &app_for_error,
+            "print_window",
+            format!("failed to spawn print dialog scheduler label={label_for_error}: {error}"),
+        );
+    }
 }
 
 pub fn trigger_system_print_dialog(window: &Window) -> Result<(), String> {
@@ -96,58 +200,51 @@ pub fn trigger_system_print_dialog(window: &Window) -> Result<(), String> {
     {
         std::thread::sleep(Duration::from_millis(250));
 
-        let scheduling_window = window.clone();
         let callback_window = window.clone();
-        let (tx, rx) = mpsc::sync_channel(1);
-
-        scheduling_window
-            .run_on_main_thread(move || {
-                let inner_tx = tx.clone();
-                let log_window = callback_window.clone();
-                let with_webview_result = callback_window.with_webview(move |webview| unsafe {
-                    crate::diagnostics::write(
+        let log_window = callback_window.clone();
+        callback_window
+            .with_webview(move |webview| unsafe {
+                crate::diagnostics::write(
+                    &log_window.app_handle(),
+                    "print_window",
+                    format!(
+                        "with_webview entered for print dialog label={}",
+                        log_window.label()
+                    ),
+                );
+                let controller = webview.controller();
+                match controller
+                    .CoreWebView2()
+                    .map_err(|error| format!("获取 WebView2 Core 失败: {error}"))
+                    .and_then(|core| {
+                        core.cast::<ICoreWebView2_16>().map_err(|error| {
+                            format!(
+                                "当前机器的 WebView2 Runtime 版本过低，不支持系统打印对话框: {error}"
+                            )
+                        })
+                    })
+                    .and_then(|core16| {
+                        core16
+                            .show_print_ui(COREWEBVIEW2_PRINT_DIALOG_KIND_SYSTEM)
+                            .map_err(|error| format!("调起 Windows 系统打印对话框失败: {error}"))
+                    }) {
+                    Ok(()) => crate::diagnostics::write(
+                        &log_window.app_handle(),
+                        "print_window",
+                        format!("show_print_ui dispatched label={}", log_window.label()),
+                    ),
+                    Err(error) => crate::diagnostics::write(
                         &log_window.app_handle(),
                         "print_window",
                         format!(
-                            "with_webview entered for print dialog label={}",
-                            log_window.label()
+                            "show_print_ui failed label={} error={}",
+                            log_window.label(),
+                            error
                         ),
-                    );
-                    let controller = webview.controller();
-                    let core = controller
-                        .CoreWebView2()
-                        .map_err(|error| format!("获取 WebView2 Core 失败: {error}"));
-
-                    let result = match core {
-                        Ok(core) => match core.cast::<ICoreWebView2_16>() {
-                            Ok(core16) => core16
-                                .show_print_ui(COREWEBVIEW2_PRINT_DIALOG_KIND_SYSTEM)
-                                .map_err(|error| {
-                                    format!("调起 Windows 系统打印对话框失败: {error}")
-                                }),
-                            Err(error) => Err(format!(
-                                "当前机器的 WebView2 Runtime 版本过低，不支持系统打印对话框: {error}"
-                            )),
-                        },
-                        Err(error) => Err(error),
-                    };
-
-                    let _ = inner_tx.send(result);
-                });
-
-                if let Err(error) = with_webview_result {
-                    crate::diagnostics::write(
-                        &callback_window.app_handle(),
-                        "print_window",
-                        format!("with_webview failed label={} error={}", callback_window.label(), error),
-                    );
-                    let _ = tx.send(Err(format!("切换到打印 WebView 失败: {error}")));
+                    ),
                 }
             })
-            .map_err(|error| format!("切到主线程触发系统打印失败: {error}"))?;
-
-        rx.recv_timeout(Duration::from_secs(10))
-            .map_err(|_| "触发系统打印对话框超时，请重试。".to_string())?
+            .map_err(|error| format!("切换到打印 WebView 失败: {error}"))
     }
 
     #[cfg(not(target_os = "windows"))]

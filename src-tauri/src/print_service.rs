@@ -3,9 +3,19 @@ use std::{fs, path::PathBuf, sync::Arc, thread};
 use base64::{engine::general_purpose::STANDARD, Engine};
 #[cfg(target_os = "windows")]
 use std::process::Command;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 
 use reqwest::blocking::Client;
 use tauri::AppHandle;
+#[cfg(target_os = "windows")]
+use windows::Win32::{
+    System::Memory::{GlobalFree, GlobalLock, GlobalUnlock},
+    UI::Controls::Dialogs::{
+        CommDlgExtendedError, PrintDlgW, DEVNAMES, PD_HIDEPRINTTOFILE, PD_NOSELECTION,
+        PD_RETURNDC, PD_USEDEVMODECOPIESANDCOLLATE, PRINTDLGW,
+    },
+};
 
 use crate::app_state::{
     emit_snapshot, focus_main_window, generate_job_id, now_iso, BridgeCore, BridgeSettings,
@@ -107,6 +117,310 @@ pub fn approve_job(app: &AppHandle, core: &Arc<BridgeCore>, job_id: &str) -> Res
         return Err(format!("本地 PDF 文件不存在: {file_path}"));
     }
 
+    #[cfg(target_os = "windows")]
+    {
+        return approve_job_with_windows_shell_print(app, core, job_id, job, file_path);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        approve_job_with_webview_print_window(app, core, job_id, job, file_path)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn approve_job_with_windows_shell_print(
+    app: &AppHandle,
+    core: &Arc<BridgeCore>,
+    job_id: &str,
+    job: PrintJob,
+    file_path: String,
+) -> Result<(), String> {
+    let app_for_print = app.clone();
+    let core_for_print = Arc::clone(core);
+    let thread_job_id = job_id.to_string();
+
+    thread::Builder::new()
+        .name(format!("shell-print-{job_id}"))
+        .spawn(move || {
+            crate::diagnostics::write(
+                &app_for_print,
+                "print_service",
+                format!(
+                    "background shell print task started job_id={} file_path={} job_name={}",
+                    thread_job_id, file_path, job.job_name
+                ),
+            );
+
+            let result = show_windows_print_dialog_and_dispatch(&app_for_print, &file_path);
+            match result {
+                Ok(Some(printer_name)) => {
+                    crate::diagnostics::write(
+                        &app_for_print,
+                        "print_service",
+                        format!(
+                            "background shell print task dispatched job_id={} printer={}",
+                            thread_job_id, printer_name
+                        ),
+                    );
+                    let _ = core_for_print.update_job(&thread_job_id, |target| {
+                        target.status = PrintJobStatus::DialogOpened;
+                        target.error =
+                            Some(format!("已选择打印机并通过 Windows PrintTo 动作处理: {printer_name}"));
+                    });
+                    emit_snapshot(&app_for_print, &core_for_print);
+                }
+                Ok(None) => {
+                    crate::diagnostics::write(
+                        &app_for_print,
+                        "print_service",
+                        format!("native print dialog cancelled job_id={thread_job_id}"),
+                    );
+                    let _ = core_for_print.update_job(&thread_job_id, |target| {
+                        target.status = PrintJobStatus::Cancelled;
+                        target.error = None;
+                    });
+                    emit_snapshot(&app_for_print, &core_for_print);
+                }
+                Err(error) => {
+                    crate::diagnostics::write(
+                        &app_for_print,
+                        "print_service",
+                        format!(
+                            "background shell print task failed job_id={} error={}",
+                            thread_job_id, error
+                        ),
+                    );
+                    let _ = core_for_print.update_job(&thread_job_id, |target| {
+                        target.status = PrintJobStatus::Failed;
+                        target.error = Some(error.clone());
+                    });
+                    emit_snapshot(&app_for_print, &core_for_print);
+                }
+            }
+        })
+        .map_err(|error| format!("启动系统打印线程失败: {error}"))?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn show_windows_print_dialog_and_dispatch(
+    app: &AppHandle,
+    file_path: &str,
+) -> Result<Option<String>, String> {
+    let detected = detect_pdf_page_count(file_path);
+    crate::diagnostics::write(
+        app,
+        "print_service",
+        format!(
+            "detected PDF page_count={} method={}{} file_path={}",
+            detected.count,
+            detected.method,
+            detected
+                .note
+                .as_ref()
+                .map(|note| format!(" note={note}"))
+                .unwrap_or_default(),
+            file_path
+        ),
+    );
+    let printer_name = show_windows_print_dialog(detected.count)?;
+    match printer_name {
+        Some(printer_name) => {
+            open_windows_shell_print_to(file_path, &printer_name)?;
+            Ok(Some(printer_name))
+        }
+        None => Ok(None),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn show_windows_print_dialog(page_count: u16) -> Result<Option<String>, String> {
+    let page_count = page_count.max(1);
+    let mut dialog = PRINTDLGW {
+        lStructSize: std::mem::size_of::<PRINTDLGW>() as u32,
+        Flags: PD_RETURNDC
+            | PD_USEDEVMODECOPIESANDCOLLATE
+            | PD_HIDEPRINTTOFILE
+            | PD_NOSELECTION,
+        nMinPage: 1,
+        nMaxPage: page_count,
+        nFromPage: 1,
+        nToPage: page_count,
+        nCopies: 1,
+        ..Default::default()
+    };
+
+    let accepted = unsafe { PrintDlgW(&mut dialog).as_bool() };
+    if !accepted {
+        let error = unsafe { CommDlgExtendedError() };
+        if error.0 == 0 {
+            return Ok(None);
+        }
+        return Err(format!("Windows 打印对话框打开失败，错误码: {}", error.0));
+    }
+
+    let printer_name = unsafe { read_printer_name_from_devnames(dialog.hDevNames) }
+        .unwrap_or_else(|| "默认打印机".to_string());
+
+    unsafe {
+        if dialog.hDevMode != 0 {
+            let _ = GlobalFree(dialog.hDevMode);
+        }
+        if dialog.hDevNames != 0 {
+            let _ = GlobalFree(dialog.hDevNames);
+        }
+    }
+
+    Ok(Some(printer_name))
+}
+
+#[cfg(target_os = "windows")]
+struct PdfPageCountDetection {
+    count: u16,
+    method: &'static str,
+    note: Option<String>,
+}
+
+#[cfg(target_os = "windows")]
+fn detect_pdf_page_count(file_path: &str) -> PdfPageCountDetection {
+    match detect_pdf_page_count_with_lopdf(file_path) {
+        Ok(count) => PdfPageCountDetection {
+            count,
+            method: "lopdf",
+            note: None,
+        },
+        Err(parser_error) => match fs::read(file_path) {
+            Ok(bytes) => PdfPageCountDetection {
+                count: bounded_pdf_page_count(count_pdf_page_markers(&bytes)),
+                method: "marker-fallback",
+                note: Some(format!("parser_error={parser_error}")),
+            },
+            Err(read_error) => PdfPageCountDetection {
+                count: 1,
+                method: "default",
+                note: Some(format!(
+                    "parser_error={parser_error}; read_error={read_error}"
+                )),
+            },
+        },
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn detect_pdf_page_count_with_lopdf(file_path: &str) -> Result<u16, String> {
+    let document = lopdf::Document::load(file_path)
+        .map_err(|error| format!("lopdf_load_failed:{error}"))?;
+    let count = document.get_pages().len();
+    if count == 0 {
+        return Err("lopdf_returned_zero_pages".into());
+    }
+    Ok(bounded_pdf_page_count(count))
+}
+
+#[cfg(target_os = "windows")]
+fn bounded_pdf_page_count(count: usize) -> u16 {
+    count.clamp(1, u16::MAX as usize) as u16
+}
+
+#[cfg(target_os = "windows")]
+fn count_pdf_page_markers(bytes: &[u8]) -> usize {
+    let mut count = 0usize;
+    let mut index = 0usize;
+
+    while let Some(relative) = find_subslice(&bytes[index..], b"/Type") {
+        let type_index = index + relative + b"/Type".len();
+        let after_type = skip_pdf_whitespace(bytes, type_index);
+        if bytes
+            .get(after_type..after_type + b"/Page".len())
+            .map(|value| value == b"/Page")
+            .unwrap_or(false)
+            && !matches!(bytes.get(after_type + b"/Page".len()), Some(b's'))
+        {
+            count += 1;
+        }
+        index = type_index;
+    }
+
+    count
+}
+
+#[cfg(target_os = "windows")]
+fn skip_pdf_whitespace(bytes: &[u8], mut index: usize) -> usize {
+    while matches!(
+        bytes.get(index),
+        Some(b'\0' | b'\t' | b'\n' | b'\x0c' | b'\r' | b' ')
+    ) {
+        index += 1;
+    }
+    index
+}
+
+#[cfg(target_os = "windows")]
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn read_printer_name_from_devnames(handle: isize) -> Option<String> {
+    if handle == 0 {
+        return None;
+    }
+
+    let locked = GlobalLock(handle);
+    if locked.is_null() {
+        return None;
+    }
+
+    let devnames = *(locked as *const DEVNAMES);
+    let base = locked as *const u16;
+    let name_ptr = base.add(devnames.wDeviceOffset as usize);
+    let mut len = 0usize;
+    while *name_ptr.add(len) != 0 {
+        len += 1;
+    }
+    let value = String::from_utf16_lossy(std::slice::from_raw_parts(name_ptr, len));
+    let _ = GlobalUnlock(handle);
+    let trimmed = value.trim().to_string();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn open_windows_shell_print_to(file_path: &str, printer_name: &str) -> Result<(), String> {
+    let script = "Start-Process -FilePath $args[0] -Verb PrintTo -ArgumentList ('\"{0}\"' -f $args[1])";
+    let mut command = hidden_command("powershell");
+    command
+        .args([
+            "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            script,
+            "--",
+            file_path,
+            printer_name,
+        ]);
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("调用 Windows Shell PrintTo 动作失败: {error}"))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn approve_job_with_webview_print_window(
+    app: &AppHandle,
+    core: &Arc<BridgeCore>,
+    job_id: &str,
+    job: PrintJob,
+    _file_path: String,
+) -> Result<(), String> {
     let app_for_window = app.clone();
     let core_for_window = Arc::clone(core);
     let job_for_window = job.clone();
@@ -358,7 +672,8 @@ fn windows_printer_queries() -> Vec<(&'static str, &'static [&'static str], Prin
 
 #[cfg(target_os = "windows")]
 fn run_windows_text_command(program: &str, args: &[&str]) -> Result<String, String> {
-    let output = Command::new(program)
+    let mut command = hidden_command(program);
+    let output = command
         .args(args)
         .output()
         .map_err(|error| format!("执行失败: {error}"))?;
@@ -373,6 +688,14 @@ fn run_windows_text_command(program: &str, args: &[&str]) -> Result<String, Stri
     }
 
     Ok(decode_windows_output(&output.stdout))
+}
+
+#[cfg(target_os = "windows")]
+fn hidden_command(program: &str) -> Command {
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    let mut command = Command::new(program);
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
 }
 
 #[cfg(target_os = "windows")]
