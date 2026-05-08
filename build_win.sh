@@ -23,8 +23,9 @@ BUNDLE_DIR="$TARGET_DIR/bundle/nsis"
 NSIS_OUTPUT="$NSIS_SCRIPT_DIR/nsis-output.exe"
 PRODUCT_EXE="$TARGET_DIR/liaoyitong-print-bridge.exe"
 CRATE_EXE="$TARGET_DIR/lyt_print_bridge.exe"
-SETUP_EXE="$BUNDLE_DIR/liaoyitong-print-bridge_0.1.0_x64-setup.exe"
-LEGACY_SETUP_EXE="$BUNDLE_DIR/lyt_print_bridge_0.1.0_x64-setup.exe"
+APP_VERSION="$(node -p "require('./package.json').version")"
+SETUP_EXE="$BUNDLE_DIR/liaoyitong-print-bridge_${APP_VERSION}_x64-setup.exe"
+LEGACY_SETUP_EXE="$BUNDLE_DIR/lyt_print_bridge_${APP_VERSION}_x64-setup.exe"
 
 assert_no_task_dialog_import() {
   if command -v objdump >/dev/null 2>&1 && [ -f "$PRODUCT_EXE" ]; then
@@ -43,6 +44,7 @@ echo "NSISDIR: $NSISDIR"
 echo "Starting Windows Build..."
 
 rm -f "$NSIS_OUTPUT" "$SETUP_EXE" "$LEGACY_SETUP_EXE"
+rm -f "$BUNDLE_DIR"/liaoyitong-print-bridge_*_x64-setup.exe "$BUNDLE_DIR"/lyt_print_bridge_*_x64-setup.exe
 
 if npm run build:win; then
   assert_no_task_dialog_import
