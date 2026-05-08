@@ -3,8 +3,10 @@ import vue from '@vitejs/plugin-vue'
 import { resolve } from 'node:path'
 
 export default defineConfig({
+  base: './',
   plugins: [vue()],
   build: {
+    target: 'es2018',
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),

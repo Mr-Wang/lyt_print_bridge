@@ -12,6 +12,27 @@
     <div id="app" style="font-family: Microsoft YaHei, sans-serif; padding: 18px; color: #172033;">
       辽易通打印插件正在启动...
     </div>
+    <script>
+      ;(function () {
+        function showStartupError(error) {
+          var app = document.getElementById('app')
+          if (!app) return
+          var message = error && (error.message || error.reason || error.error || error)
+          app.innerHTML =
+            '<div style="font-family: Microsoft YaHei, sans-serif; padding: 16px; color: #b91c1c; line-height: 1.6;">' +
+            '<strong>打印插件界面加载失败</strong><br />' +
+            String(message || '未知错误') +
+            '</div>'
+        }
+
+        window.addEventListener('error', function (event) {
+          showStartupError(event.error || event.message)
+        })
+        window.addEventListener('unhandledrejection', function (event) {
+          showStartupError(event.reason)
+        })
+      })()
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

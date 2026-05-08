@@ -104,11 +104,15 @@ async function hideWindow() {
 }
 
 onMounted(async () => {
-  await refreshSnapshot()
-  await refreshLogPath()
-  unlistenSnapshot = await listen<RuntimeSnapshot>('print-bridge://snapshot', (event) => {
-    applySnapshot(event.payload)
-  })
+  try {
+    await refreshSnapshot()
+    await refreshLogPath()
+    unlistenSnapshot = await listen<RuntimeSnapshot>('print-bridge://snapshot', (event) => {
+      applySnapshot(event.payload)
+    })
+  } catch (error) {
+    errorMessage.value = String(error)
+  }
 })
 
 onUnmounted(() => {
