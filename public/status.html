@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>辽易通打印桥 v0.1.2</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #f4f7fb;
+        color: #172033;
+        font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      }
+
+      .plugin-shell {
+        display: flex;
+        min-height: 100vh;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px;
+      }
+
+      .topbar,
+      .status-panel,
+      .last-job {
+        border: 1px solid #dce3ec;
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px;
+      }
+
+      h1,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 18px;
+        line-height: 1.2;
+      }
+
+      .muted,
+      .footnote,
+      .last-job p,
+      .status-panel span,
+      .last-job span {
+        color: #64748b;
+        font-size: 12px;
+      }
+
+      .status-dot {
+        width: 12px;
+        height: 12px;
+        flex: 0 0 auto;
+        border-radius: 999px;
+        background: #ef4444;
+        box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.12);
+      }
+
+      .status-dot.is-ok {
+        background: #16a34a;
+        box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.14);
+      }
+
+      .status-panel {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1px;
+        overflow: hidden;
+        background: #dce3ec;
+      }
+
+      .status-panel div {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        gap: 4px;
+        background: #fff;
+        padding: 12px;
+      }
+
+      .status-panel strong,
+      .last-job strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .last-job {
+        display: flex;
+        min-height: 72px;
+        flex-direction: column;
+        gap: 5px;
+        padding: 12px;
+      }
+
+      .error-text {
+        color: #b91c1c;
+      }
+
+      .actions {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+      }
+
+      button {
+        min-width: 86px;
+        border: 0;
+        border-radius: 8px;
+        background: #1f6feb;
+        color: #fff;
+        cursor: pointer;
+        padding: 9px 12px;
+        font: inherit;
+      }
+
+      button.secondary {
+        background: #e7ecf2;
+        color: #172033;
+      }
+
+      .footnote {
+        overflow: hidden;
+        margin-top: auto;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="plugin-shell">
+      <section class="topbar">
+        <div>
+          <h1>辽易通打印插件 v0.1.2</h1>
+          <p id="base-url" class="muted">正在启动本地服务...</p>
+        </div>
+        <span id="status-dot" class="status-dot"></span>
+      </section>
+
+      <section class="status-panel">
+        <div>
+          <span>服务状态</span>
+          <strong id="service-status">未启动</strong>
+        </div>
+        <div>
+          <span>本地端口</span>
+          <strong id="service-port">12734</strong>
+        </div>
+      </section>
+
+      <section class="last-job">
+        <span>最近任务</span>
+        <strong id="last-job-name">暂无打印任务</strong>
+        <p id="last-job-status"></p>
+        <p id="error-message" class="error-text"></p>
+      </section>
+
+      <section class="actions">
+        <button type="button" id="refresh">刷新状态</button>
+        <button type="button" id="restart">重启服务</button>
+        <button type="button" id="open-log" class="secondary">打开日志</button>
+        <button type="button" id="hide-window" class="secondary">隐藏</button>
+      </section>
+
+      <p id="log-path" class="footnote">日志路径加载中</p>
+    </main>
+
+    <script>
+      ;(function () {
+        var jobLabels = {
+          downloading: '接收中',
+          printing: '准备打印',
+          dialogOpened: '已打开打印框',
+          completed: '已完成',
+          failed: '失败',
+          cancelled: '已取消'
+        }
+
+        function byId(id) {
+          return document.getElementById(id)
+        }
+
+        function uid() {
+          if (window.crypto && window.crypto.getRandomValues) {
+            return window.crypto.getRandomValues(new Uint32Array(1))[0]
+          }
+          return Math.floor(Math.random() * 1000000000)
+        }
+
+        function callback(fn, once) {
+          var id = uid()
+          var prop = '_' + id
+          Object.defineProperty(window, prop, {
+            value: function (result) {
+              if (once) {
+                try {
+                  Reflect.deleteProperty(window, prop)
+                } catch (_) {}
+              }
+              return fn && fn(result)
+            },
+            writable: false,
+            configurable: true
+          })
+          return id
+        }
+
+        function invoke(cmd, args) {
+          args = args || {}
+          return new Promise(function (resolve, reject) {
+            if (!window.__TAURI_IPC__) {
+              reject('Tauri IPC 未初始化，请确认 WebView2 Runtime 是否正常。')
+              return
+            }
+            var errorId
+            var callbackId = callback(function (result) {
+              resolve(result)
+              try {
+                Reflect.deleteProperty(window, '_' + errorId)
+              } catch (_) {}
+            }, true)
+            errorId = callback(function (error) {
+              reject(error)
+              try {
+                Reflect.deleteProperty(window, '_' + callbackId)
+              } catch (_) {}
+            }, true)
+            args.cmd = cmd
+            args.callback = callbackId
+            args.error = errorId
+            window.__TAURI_IPC__(args)
+          })
+        }
+
+        function invokeTauri(command) {
+          return invoke('tauri', command)
+        }
+
+        function listen(eventName, handler) {
+          var handlerId = callback(handler, false)
+          return invokeTauri({
+            __tauriModule: 'Event',
+            message: {
+              cmd: 'listen',
+              event: eventName,
+              windowLabel: null,
+              handler: handlerId
+            }
+          })
+        }
+
+        function setText(id, value) {
+          var element = byId(id)
+          if (element) {
+            element.textContent = value == null ? '' : String(value)
+          }
+        }
+
+        function setError(error) {
+          setText('error-message', error ? String(error) : '')
+        }
+
+        function applySnapshot(snapshot) {
+          if (!snapshot) return
+          var settings = snapshot.settings || {}
+          var service = snapshot.service || {}
+          var jobs = snapshot.jobs || []
+          var lastJob = jobs[0]
+
+          setText('base-url', service.baseUrl || '正在启动本地服务...')
+          setText('service-status', service.running ? '运行中' : '未启动')
+          setText('service-port', settings.port || 12734)
+          setText('last-job-name', lastJob ? lastJob.jobName : '暂无打印任务')
+          setText('last-job-status', lastJob ? (jobLabels[lastJob.status] || lastJob.status) : '')
+          setError(lastJob && lastJob.error ? lastJob.error : service.lastError || '')
+
+          var dot = byId('status-dot')
+          if (dot) {
+            dot.className = service.running ? 'status-dot is-ok' : 'status-dot'
+          }
+        }
+
+        function refreshLogPath() {
+          return invoke('get_log_file_path')
+            .then(function (path) {
+              setText('log-path', path || '日志路径加载中')
+            })
+            .catch(function () {
+              setText('log-path', '')
+            })
+        }
+
+        function refreshSnapshot() {
+          setError('')
+          return invoke('get_runtime_snapshot')
+            .then(applySnapshot)
+            .catch(setError)
+        }
+
+        function restartService() {
+          setError('')
+          return invoke('restart_local_service')
+            .then(applySnapshot)
+            .catch(setError)
+        }
+
+        function openLogFile() {
+          setError('')
+          return invoke('open_log_file')
+            .then(refreshLogPath)
+            .catch(setError)
+        }
+
+        function hideWindow() {
+          setError('')
+          return invoke('hide_current_window').catch(setError)
+        }
+
+        function bind(id, handler) {
+          var element = byId(id)
+          if (element) {
+            element.addEventListener('click', handler)
+          }
+        }
+
+        bind('refresh', refreshSnapshot)
+        bind('restart', restartService)
+        bind('open-log', openLogFile)
+        bind('hide-window', hideWindow)
+
+        window.addEventListener('error', function (event) {
+          setError(event.message || event.error || '界面脚本错误')
+        })
+        window.addEventListener('unhandledrejection', function (event) {
+          setError(event.reason || '界面异步错误')
+        })
+
+        refreshSnapshot()
+        refreshLogPath()
+        listen('print-bridge://snapshot', function (event) {
+          applySnapshot(event && event.payload)
+        }).catch(setError)
+      })()
+    </script>
+  </body>
+</html>

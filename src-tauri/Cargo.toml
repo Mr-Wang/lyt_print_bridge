@@ -1,6 +1,6 @@
 [package]
 name = "lyt_print_bridge"
-version = "0.1.1"
+version = "0.1.2"
 description = "Local PDF print bridge for browser initiated jobs"
 authors = ["wangyang"]
 license = ""
